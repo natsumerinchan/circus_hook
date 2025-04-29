@@ -9,6 +9,38 @@
 #define ENABLE_LOGGING 1
 
 // 原始函数指针
+static HFONT (WINAPI *OriginalCreateFontA)(
+    int nHeight,
+    int nWidth,
+    int nEscapement,
+    int nOrientation, 
+    int fnWeight,
+    DWORD fdwItalic,
+    DWORD fdwUnderline,
+    DWORD fdwStrikeOut,
+    DWORD fdwCharSet,
+    DWORD fdwOutputPrecision,
+    DWORD fdwClipPrecision,
+    DWORD fdwQuality,
+    DWORD fdwPitchAndFamily,
+    LPCSTR lpszFace) = CreateFontA;
+
+static HFONT (WINAPI *OriginalCreateFontW)(
+    int nHeight,
+    int nWidth,
+    int nEscapement,
+    int nOrientation,
+    int fnWeight,
+    DWORD fdwItalic, 
+    DWORD fdwUnderline,
+    DWORD fdwStrikeOut,
+    DWORD fdwCharSet,
+    DWORD fdwOutputPrecision,
+    DWORD fdwClipPrecision,
+    DWORD fdwQuality,
+    DWORD fdwPitchAndFamily,
+    LPCWSTR lpszFace) = CreateFontW;
+
 static HANDLE (WINAPI *OriginalCreateFileA)(
     LPCSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -20,32 +52,87 @@ static HANDLE (WINAPI *OriginalCreateFileA)(
 
 // 全局日志文件指针
 static FILE* g_logFile = NULL;
+static CRITICAL_SECTION g_csLog;
 
 // 初始化日志文件
 void InitLogFile() {
 #if ENABLE_LOGGING
-    if (!g_logFile) {
-        g_logFile = fopen("KADENZF_CHS.log", "w");
-    }
+    InitializeCriticalSection(&g_csLog);
+    // 使用UTF-8模式打开日志文件
+    g_logFile = _wfopen(L"KADENZF_CHS.log", L"w, ccs=UTF-8");
 #endif
 }
 
 // 日志函数
-void Log(const char* format, ...) {
+void Log(const wchar_t* format, ...) {
 #if ENABLE_LOGGING
-    if (!g_logFile) {
-        g_logFile = fopen("KADENZF_CHS.log", "a");
+    if (!g_logFile) return;
+    
+    EnterCriticalSection(&g_csLog);
+    
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    
+    // 格式化日志前缀
+    wchar_t prefix[256];
+    swprintf(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d] ", 
+             st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond);
+    
+    // 格式化日志主体
+    va_list args;
+    va_start(args, format);
+    wchar_t buffer[1024];
+    vswprintf(buffer, format, args);
+    va_end(args);
+    
+    // 组合并写入日志(UTF-8)
+    fwprintf(g_logFile, L"%s%s\r\n", prefix, buffer);
+    fflush(g_logFile);
+    
+    LeaveCriticalSection(&g_csLog);
+#endif
+}
+
+// Hooked CreateFontA函数 - 重定向至CreateFontW
+HFONT WINAPI HookedCreateFontA(
+    int nHeight,
+    int nWidth,
+    int nEscapement,
+    int nOrientation,
+    int fnWeight,
+    DWORD fdwItalic,
+    DWORD fdwUnderline,
+    DWORD fdwStrikeOut,
+    DWORD fdwCharSet,
+    DWORD fdwOutputPrecision,
+    DWORD fdwClipPrecision,
+    DWORD fdwQuality,
+    DWORD fdwPitchAndFamily,
+    LPCSTR lpszFace) {
+    
+    // 转换为Unicode字符串(CP932编码)
+    WCHAR wszFaceName[MAX_PATH] = {0};
+    if (lpszFace && *lpszFace) {
+        MultiByteToWideChar(932, 0, lpszFace, -1, wszFaceName, MAX_PATH);
     }
     
-    if (g_logFile) {
-        va_list args;
-        va_start(args, format);
-        vfprintf(g_logFile, format, args);
-        fprintf(g_logFile, "\n");
-        fflush(g_logFile);
-        va_end(args);
+    // 强制使用VL ゴシック字体并保持原字符集(0x80)不变
+    LPCWSTR newFace = L"VL ゴシック";
+    
+    // 使用Unicode日志
+    if (lpszFace && *lpszFace) {
+        Log(L"[Hook] CreateFontA redirected to CreateFontW: %s -> VL ゴシック (Charset: 0x%x)", 
+            wszFaceName, fdwCharSet);
+    } else {
+        Log(L"[Hook] CreateFontA redirected to CreateFontW: NULL -> VL ゴシック (Charset: 0x%x)",
+            fdwCharSet);
     }
-#endif
+    
+    return OriginalCreateFontW(nHeight, nWidth, nEscapement, nOrientation,
+                              fnWeight, fdwItalic, fdwUnderline, fdwStrikeOut,
+                              fdwCharSet, fdwOutputPrecision, fdwClipPrecision,
+                              fdwQuality, fdwPitchAndFamily, newFace);
 }
 
 // 关闭日志文件
@@ -55,6 +142,7 @@ void CloseLogFile() {
         fclose(g_logFile);
         g_logFile = NULL;
     }
+    DeleteCriticalSection(&g_csLog);
 #endif
 }
 
@@ -75,7 +163,7 @@ HANDLE WINAPI HookedCreateFileA(
     if (lpFileName && strstr(lpFileName, "AdvData\\MES")) {
         // 确保路径缓冲区安全
         if (strlen(lpFileName) >= MAX_PATH) {
-            Log("[Error] Path too long: %s", lpFileName);
+            Log(L"[Error] Path too long: %S", lpFileName);
             return OriginalCreateFileA(lpFileName, dwDesiredAccess, dwShareMode,
                                   lpSecurityAttributes, dwCreationDisposition,
                                   dwFlagsAndAttributes, hTemplateFile);
@@ -84,7 +172,7 @@ HANDLE WINAPI HookedCreateFileA(
         // 查找MES目录位置
         const char* mesPos = strstr(lpFileName, "MES");
         if (!mesPos || (mesPos - lpFileName) >= MAX_PATH) {
-            Log("[Error] Invalid MES path: %s", lpFileName);
+            Log(L"[Error] Invalid MES path: %S", lpFileName);
             return OriginalCreateFileA(lpFileName, dwDesiredAccess, dwShareMode,
                                   lpSecurityAttributes, dwCreationDisposition,
                                   dwFlagsAndAttributes, hTemplateFile);
@@ -99,7 +187,7 @@ HANDLE WINAPI HookedCreateFileA(
         
         // 确保路径安全
         if (strlen(fullChsPath) >= MAX_PATH) {
-            Log("[Error] CHS path too long: %s", fullChsPath);
+            Log(L"[Error] CHS path too long: %S", fullChsPath);
             return OriginalCreateFileA(origFileName, dwDesiredAccess, dwShareMode,
                                   lpSecurityAttributes, dwCreationDisposition,
                                   dwFlagsAndAttributes, hTemplateFile);
@@ -111,9 +199,9 @@ HANDLE WINAPI HookedCreateFileA(
         if (hFind != INVALID_HANDLE_VALUE) {
             FindClose(hFind);
             lpFileName = fullChsPath;
-            Log("[Hook] Redirected: %s -> %s", origFileName, fullChsPath);
+            Log(L"[Hook] Redirected: %S -> %S", origFileName, fullChsPath);
         } else {
-            Log("[Hook] CHS file not found (%s), using original: %s", fullChsPath, origFileName);
+            Log(L"[Hook] CHS file not found (%S), using original: %S", fullChsPath, origFileName);
         }
     }
     
@@ -124,10 +212,11 @@ HANDLE WINAPI HookedCreateFileA(
 
 // 导出函数
 extern "C" __declspec(dllexport) void InitializeHook() {
-    Log("Initializing hooks...");
+    Log(L"Initializing hooks...");
     DetourRestoreAfterWith();
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
+    DetourAttach(&(PVOID&)OriginalCreateFontA, HookedCreateFontA);
     DetourAttach(&(PVOID&)OriginalCreateFileA, HookedCreateFileA);
     DetourTransactionCommit();
 }
@@ -136,15 +225,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     switch (ul_reason_for_call) {
         case DLL_PROCESS_ATTACH:
             InitLogFile();
-            Log("DLL loaded");
+    Log(L"DLL loaded");
             InitializeHook();
             break;
         case DLL_PROCESS_DETACH:
             DetourTransactionBegin();
             DetourUpdateThread(GetCurrentThread());
+            DetourDetach(&(PVOID&)OriginalCreateFontA, HookedCreateFontA);
             DetourDetach(&(PVOID&)OriginalCreateFileA, HookedCreateFileA);
             DetourTransactionCommit();
-            Log("DLL unloaded");
+    Log(L"DLL unloaded");
             break;
     }
     return TRUE;
