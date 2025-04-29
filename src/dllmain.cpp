@@ -94,6 +94,18 @@ void Log(const wchar_t* format, ...) {
 #endif
 }
 
+// 声明WndProc函数指针
+typedef LRESULT (CALLBACK *WNDPROC)(HWND, UINT, WPARAM, LPARAM);
+static WNDPROC OriginalWndProc = (WNDPROC)0x41EE30;
+
+// Hooked WndProc函数
+LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_SETTEXT || uMsg == WM_NCPAINT) {
+        SetWindowTextW(hWnd, L"Kadenz fermata//Akkord：fortissimo gpt-4.1-2025-04-14翻译补丁 || 作者：natsumerinchan@Github==雨宮ゆうこ@moyu || 允许转载但严禁倒卖和冒充人工汉化发布");
+    }
+    return OriginalWndProc(hWnd, uMsg, wParam, lParam);
+}
+
 // Hooked CreateFontA函数 - 重定向至CreateFontW
 HFONT WINAPI HookedCreateFontA(
     int nHeight,
@@ -218,6 +230,7 @@ extern "C" __declspec(dllexport) void InitializeHook() {
     DetourUpdateThread(GetCurrentThread());
     DetourAttach(&(PVOID&)OriginalCreateFontA, HookedCreateFontA);
     DetourAttach(&(PVOID&)OriginalCreateFileA, HookedCreateFileA);
+    DetourAttach(&(PVOID&)OriginalWndProc, HookedWndProc);
     DetourTransactionCommit();
 }
 
