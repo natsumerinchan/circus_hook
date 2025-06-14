@@ -7,8 +7,13 @@
 - 4、标题修改
 - 5、编码修改为GB2312
 
+## 使用方法
+理论上适用于所有未加壳的CIRCUS引擎游戏，安装<br>
+Visual Studio 2022后运行build.bat编译，然后<br>
+使用CFF Explorer导入dll。
+
 ## 编码范围修改
-编码范围需参考 https://www.iteye.com/blog/shera-409666 用x32dbg手动修改,
+编码范围需参考 https://www.iteye.com/blog/shera-409666 用x32dbg手动修改,<br>
 在主模块搜索常数A0，过滤cmp开头的命令
 
 (al可能为dl,80可能为98)
