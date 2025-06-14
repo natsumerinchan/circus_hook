@@ -59,7 +59,7 @@ void InitLogFile() {
 #if ENABLE_LOGGING
     InitializeCriticalSection(&g_csLog);
     // 使用UTF-8模式打开日志文件
-    g_logFile = _wfopen(L"KADENZF_CHS.log", L"w, ccs=UTF-8");
+    g_logFile = _wfopen(L"CIRCUS_HOOK.log", L"w, ccs=UTF-8");
 #endif
 }
 
@@ -96,12 +96,12 @@ void Log(const wchar_t* format, ...) {
 
 // 声明WndProc函数指针
 typedef LRESULT (CALLBACK *WNDPROC)(HWND, UINT, WPARAM, LPARAM);
-static WNDPROC OriginalWndProc = (WNDPROC)0x41EE30;
+static WNDPROC OriginalWndProc = (WNDPROC)0x408B80;
 
 // Hooked WndProc函数
 LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if (uMsg == WM_SETTEXT || uMsg == WM_NCPAINT) {
-        SetWindowTextW(hWnd, L"Kadenz fermata//Akkord：fortissimo gpt-4.1-2025-04-14翻译补丁 || 作者：natsumerinchan@Github==雨宮ゆうこ@moyu || 允许转载但严禁倒卖和冒充人工汉化发布");
+        SetWindowTextW(hWnd, L"ホームメイド スイーツ claude-3-7-sonnet翻译补丁 || 作者：natsumerin@御爱同萌==雨宮ゆうこ@moyu || 允许转载但严禁倒卖和冒充人工汉化发布");
     }
     return OriginalWndProc(hWnd, uMsg, wParam, lParam);
 }
@@ -123,27 +123,26 @@ HFONT WINAPI HookedCreateFontA(
     DWORD fdwPitchAndFamily,
     LPCSTR lpszFace) {
     
-    // 转换为Unicode字符串(CP932编码)
+    // 转换为Unicode字符串(CP936编码)
     WCHAR wszFaceName[MAX_PATH] = {0};
     if (lpszFace && *lpszFace) {
         MultiByteToWideChar(932, 0, lpszFace, -1, wszFaceName, MAX_PATH);
     }
     
-    // 强制使用VL ゴシック字体并保持原字符集(0x80)不变
-    LPCWSTR newFace = L"VL ゴシック";
+    // 修改为使用GBK字符集(0x86)和黑体
+    LPCWSTR newFace = L"黑体";
     
     // 使用Unicode日志
     if (lpszFace && *lpszFace) {
-        Log(L"[Hook] CreateFontA redirected to CreateFontW: %s -> VL ゴシック (Charset: 0x%x)", 
-            wszFaceName, fdwCharSet);
+    Log(L"[Hook] CreateFontA redirected to CreateFontW: %s -> 黑体 (Charset: 0x86)", 
+        wszFaceName);
     } else {
-        Log(L"[Hook] CreateFontA redirected to CreateFontW: NULL -> VL ゴシック (Charset: 0x%x)",
-            fdwCharSet);
+        Log(L"[Hook] CreateFontA redirected to CreateFontW: NULL -> 黑体 (Charset: 0x86)");
     }
     
     return OriginalCreateFontW(nHeight, nWidth, nEscapement, nOrientation,
                               fnWeight, fdwItalic, fdwUnderline, fdwStrikeOut,
-                              fdwCharSet, fdwOutputPrecision, fdwClipPrecision,
+                              0x86, fdwOutputPrecision, fdwClipPrecision,
                               fdwQuality, fdwPitchAndFamily, newFace);
 }
 
